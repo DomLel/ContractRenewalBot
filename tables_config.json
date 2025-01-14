@@ -5,7 +5,6 @@
         "owner_column_name": "evangelist",
         "cost_column_name": "annual_cost",
         "renewal_column_name": "contract_renewal",
-        "last_row": 0,
         "limit": 1
     },
     {
@@ -14,7 +13,6 @@
         "owner_column_name": "owner",
         "cost_column_name": "cost",
         "renewal_column_name": "renewal_date",
-        "last_row": 0,
         "limit": 1
     }
 ]

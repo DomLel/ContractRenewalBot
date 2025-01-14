@@ -49,14 +49,7 @@ def validate_table_and_columns(cursor, table_name, columns):
         if column not in existing_columns:
             raise ValueError(f"Column '{column}' does not exist in table '{table_name}'.")
 
-
-def validate_input(limit, last_row):
-    if not isinstance(limit, int) or limit <= 0:
-        raise ValueError("Limit must be a positive integer.")
-    if not isinstance(last_row, int) or last_row < 0:
-        raise ValueError("Last row must be a non-negative integer.")
-
-
+# todo
 def validate_row_data(row):
     if not isinstance(row[2], (int, float)) or row[2] < 0:
         raise ValueError(f"Invalid annual cost: {row[2]}")
@@ -67,11 +60,9 @@ def validate_row_data(row):
             raise ValueError(f"Invalid date format for contract renewal: {row[3]}")
 
 
-def fetch_contracts(contracts, db_path, table_name, name_column_name, owner_column_name, cost_column_name, renewal_column_name, limit, last_row=0):
+def fetch_contracts(contracts, db_path, table_name, name_column_name, owner_column_name, cost_column_name, renewal_column_name):
     if not os.path.exists(db_path):
         raise FileNotFoundError(f"Database file '{db_path}' not found.")
-    
-    validate_input(limit, last_row)
 
     try:
         connection = sqlite3.connect(db_path)
@@ -82,7 +73,6 @@ def fetch_contracts(contracts, db_path, table_name, name_column_name, owner_colu
         query = f"""
         WITH RankedContracts AS (
             SELECT
-                ROW_NUMBER() OVER (ORDER BY ROWID) AS row_num,
                 {name_column_name},
                 {owner_column_name},
                 {cost_column_name},
@@ -97,12 +87,9 @@ def fetch_contracts(contracts, db_path, table_name, name_column_name, owner_colu
             {renewal_column_name}
         FROM
             RankedContracts
-        WHERE
-            row_num > ? 
-        LIMIT ?;
         """
 
-        cursor.execute(query, (last_row, limit))
+        cursor.execute(query)
         rows = cursor.fetchall()
 
         for row in rows:
@@ -156,22 +143,6 @@ def generate_report(contracts):
 
     return "\n".join(report)
 
-
-def read_last_row(file_path):
-    if os.path.exists(file_path):
-        with open(file_path, "r") as file:
-            return json.load(file)
-    return {}
-
-
-def write_last_row(file_path, last_row_data):
-    try:
-        with open(file_path, "w") as file:
-            json.dump(last_row_data, file, indent=4)
-    except IOError as e:
-        log_error(f"Failed to write last_row data to file: {e}")
-
-
 def read_table_config(file_path):
     if os.path.exists(file_path):
         try:
@@ -183,7 +154,7 @@ def read_table_config(file_path):
                     raise ValueError("The table configuration file must contain a list of table configurations.")
 
                 for table in table_config:
-                    required_keys = ["table_name", "name_column_name", "owner_column_name", "cost_column_name", "renewal_column_name", "last_row", "limit"]
+                    required_keys = ["table_name", "name_column_name", "owner_column_name", "cost_column_name", "renewal_column_name"]
                     for key in required_keys:
                         if key not in table:
                             raise ValueError(f"Missing required key '{key}' in table configuration: {table}")
@@ -194,47 +165,25 @@ def read_table_config(file_path):
             raise
     else:
         raise FileNotFoundError(f"Table configuration file '{file_path}' not found.")
-
-
-def write_table_config(file_path, table_config):
-    try:
-        with open(file_path, "w") as file:
-            json.dump(table_config, file, indent=4)
-    except IOError as e:
-        log_error(f"Failed to write table configuration to file: {e}")
-
-
+    
 def main():
     contracts = []
     db_path = "contracts.sqlite"
-    last_row_file = "last_row.json"
     table_config_file = "tables_config.json"
 
     try:
-        # Load last_row data
-        last_row_data = read_last_row(last_row_file)
-
         table_config = read_table_config(table_config_file)
-        # If last_row.json doesn't exist, use tables_config.json
-        if not last_row_data:
-            last_row_data = {table["table_name"]: table["last_row"] for table in table_config}
-            # Create last_row.json for future use
-            write_last_row(last_row_file, last_row_data)
 
         for table in table_config:
-            rows_fetched = fetch_contracts(
+            fetch_contracts(
                 contracts=contracts,
                 db_path=db_path,
                 table_name=table["table_name"],
                 name_column_name=table["name_column_name"],
                 owner_column_name=table["owner_column_name"],
                 cost_column_name=table["cost_column_name"],
-                renewal_column_name=table["renewal_column_name"],
-                limit=table["limit"],
-                last_row=last_row_data.get(table["table_name"], 0)
+                renewal_column_name=table["renewal_column_name"]
             )
-            # Update last_row if rows were fetched
-            last_row_data[table["table_name"]] = last_row_data.get(table["table_name"], 0) + rows_fetched
 
         report = generate_report(contracts)
 
@@ -249,21 +198,9 @@ def main():
             text=report
         )
 
-        # Save updated last_row data
-        write_last_row(last_row_file, last_row_data)
-
-        # Save updated table configuration
-        write_table_config(table_config_file, table_config)
-
     except Exception as e:
         log_error(str(e))
 
 
 if __name__ == "__main__":
     main()
-
-#Improvements:
-#Make the formatting nicer, improve comments
-#Write up documentation in the repo landing page
-#Make unit tests with import unittest
-#File that assigns normal names according to table names
