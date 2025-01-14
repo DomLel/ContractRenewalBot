@@ -1,5 +1,6 @@
 import os
 import sqlite3
+import json
 from datetime import datetime, timedelta
 from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
@@ -117,9 +118,11 @@ def fetch_contracts(contracts, db_path, table_name, name_column_name, owner_colu
             contracts.append(contract)
 
         if rows:
-            last_row += len(rows)
+            return len(rows)
+        return 0
     except sqlite3.Error as e:
         log_error(f"Database error: {e}")
+        return 0
     finally:
         connection.close()
 
@@ -154,12 +157,27 @@ def generate_report(contracts):
     return "\n".join(report)
 
 
+def read_last_row(file_path):
+    if os.path.exists(file_path):
+        with open(file_path, "r") as file:
+            return json.load(file)
+    return {}
+
+
+def write_last_row(file_path, last_row_data):
+    with open(file_path, "w") as file:
+        json.dump(last_row_data, file, indent=4)
+
+
 def main():
     contracts = []
-
     db_path = "contracts.sqlite"
+    last_row_file = "last_row.json"
 
     try:
+        # Load last_row data
+        last_row_data = read_last_row(last_row_file)
+
         tables = [
             {
                 "table_name": "vertex_systems",
@@ -167,7 +185,7 @@ def main():
                 "owner_column_name": "evangelist",
                 "cost_column_name": "annual_cost",
                 "renewal_column_name": "contract_renewal",
-                "last_row": 0,
+                "last_row": last_row_data.get("vertex_systems", 0),
                 "limit": 1
             },
             {
@@ -176,13 +194,13 @@ def main():
                 "owner_column_name": "owner",
                 "cost_column_name": "cost",
                 "renewal_column_name": "renewal_date",
-                "last_row": 0,
+                "last_row": last_row_data.get("xtech_solutions", 0),
                 "limit": 1
             }
         ]
 
         for table in tables:
-            fetch_contracts(
+            rows_fetched = fetch_contracts(
                 contracts=contracts,
                 db_path=db_path,
                 table_name=table["table_name"],
@@ -193,6 +211,8 @@ def main():
                 limit=table["limit"],
                 last_row=table["last_row"]
             )
+            # Update last_row if rows were fetched
+            last_row_data[table["table_name"]] = table["last_row"] + rows_fetched
 
         report = generate_report(contracts)
 
@@ -206,6 +226,10 @@ def main():
             channel="nordsec-test",
             text=report
         )
+
+        # Save updated last_row data
+        write_last_row(last_row_file, last_row_data)
+
     except Exception as e:
         log_error(str(e))
 
