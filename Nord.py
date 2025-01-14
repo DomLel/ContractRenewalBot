@@ -14,13 +14,34 @@ class Contract:
         self.contract_renewal = contract_renewal
 
 
+def log_error(message):
+    slack_token = os.environ.get("SLACK_BOT_TOKEN")
+    log_file = "error_log.txt"
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    # Format error message
+    full_message = f"[{timestamp}] {message}\n"
+
+    # Write to a local file
+    with open(log_file, "a") as file:
+        file.write(full_message)
+
+    # Send error message to Slack
+    if slack_token:
+        client = WebClient(token=slack_token)
+        try:
+            client.chat_postMessage(channel="nordsec-test", text=f"Error occurred:\n{full_message}")
+        except SlackApiError as e:
+            # Log Slack API error to local file
+            with open(log_file, "a") as file:
+                file.write(f"[{timestamp}] Failed to send error to Slack: {e.response['error']}\n")
+
+
 def validate_table_and_columns(cursor, table_name, columns):
-    # Check if table exists
     cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name=?;", (table_name,))
     if cursor.fetchone() is None:
         raise ValueError(f"Table '{table_name}' does not exist in the database.")
     
-    # Check if all specified columns exist
     cursor.execute(f"PRAGMA table_info({table_name});")
     existing_columns = {row[1] for row in cursor.fetchall()}
     for column in columns:
@@ -98,7 +119,7 @@ def fetch_contracts(contracts, db_path, table_name, name_column_name, owner_colu
         if rows:
             last_row += len(rows)
     except sqlite3.Error as e:
-        print(f"Database error: {e}")
+        log_error(f"Database error: {e}")
     finally:
         connection.close()
 
@@ -137,65 +158,62 @@ def main():
     contracts = []
 
     db_path = "contracts.sqlite"
-    slack_token = os.environ.get("SLACK_BOT_TOKEN")
-    if not slack_token:
-        raise EnvironmentError("SLACK_BOT_TOKEN environment variable is not set.")
-
-    client = WebClient(token=slack_token)
-
-    tables = [
-        {
-            "table_name": "vertex_systems",
-            "name_column_name": "name",
-            "owner_column_name": "evangelist",
-            "cost_column_name": "annual_cost",
-            "renewal_column_name": "contract_renewal",
-            "last_row": 0,
-            "limit": 1
-        },
-        {
-            "table_name": "xtech_solutions",
-            "name_column_name": "name",
-            "owner_column_name": "owner",
-            "cost_column_name": "cost",
-            "renewal_column_name": "renewal_date",
-            "last_row": 0,
-            "limit": 1
-        }
-    ]
-
-    for table in tables:
-        fetch_contracts(
-            contracts=contracts,
-            db_path=db_path,
-            table_name=table["table_name"],
-            name_column_name=table["name_column_name"],
-            owner_column_name=table["owner_column_name"],
-            cost_column_name=table["cost_column_name"],
-            renewal_column_name=table["renewal_column_name"],
-            limit=table["limit"],
-            last_row=table["last_row"]
-        )
-
-    report = generate_report(contracts)
 
     try:
-        response = client.chat_postMessage(
+        tables = [
+            {
+                "table_name": "vertex_systems",
+                "name_column_name": "name",
+                "owner_column_name": "evangelist",
+                "cost_column_name": "annual_cost",
+                "renewal_column_name": "contract_renewal",
+                "last_row": 0,
+                "limit": 1
+            },
+            {
+                "table_name": "xtech_solutions",
+                "name_column_name": "name",
+                "owner_column_name": "owner",
+                "cost_column_name": "cost",
+                "renewal_column_name": "renewal_date",
+                "last_row": 0,
+                "limit": 1
+            }
+        ]
+
+        for table in tables:
+            fetch_contracts(
+                contracts=contracts,
+                db_path=db_path,
+                table_name=table["table_name"],
+                name_column_name=table["name_column_name"],
+                owner_column_name=table["owner_column_name"],
+                cost_column_name=table["cost_column_name"],
+                renewal_column_name=table["renewal_column_name"],
+                limit=table["limit"],
+                last_row=table["last_row"]
+            )
+
+        report = generate_report(contracts)
+
+        slack_token = os.environ.get("SLACK_BOT_TOKEN")
+        if not slack_token:
+            raise EnvironmentError("SLACK_BOT_TOKEN environment variable is not set.")
+
+        client = WebClient(token=slack_token)
+
+        client.chat_postMessage(
             channel="nordsec-test",
             text=report
         )
-    except SlackApiError as e:
-        print(f"Slack API error: {e.response['error']}")
+    except Exception as e:
+        log_error(str(e))
 
 
 if __name__ == "__main__":
     main()
 
 #Improvements:
-#Validate data.
-#Handle errors
-#Dump any errors to a log file.
-    #Use import logging
 #Make the formatting nicer, improve comments
 #Write up documentation in the repo landing page
 #Make unit tests with import unittest
