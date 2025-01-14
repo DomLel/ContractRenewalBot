@@ -214,8 +214,12 @@ def main():
         # Load last_row data
         last_row_data = read_last_row(last_row_file)
 
-        # Load table configuration
         table_config = read_table_config(table_config_file)
+        # If last_row.json doesn't exist, use tables_config.json
+        if not last_row_data:
+            last_row_data = {table["table_name"]: table["last_row"] for table in table_config}
+            # Create last_row.json for future use
+            write_last_row(last_row_file, last_row_data)
 
         for table in table_config:
             rows_fetched = fetch_contracts(
@@ -227,10 +231,10 @@ def main():
                 cost_column_name=table["cost_column_name"],
                 renewal_column_name=table["renewal_column_name"],
                 limit=table["limit"],
-                last_row=table["last_row"]
+                last_row=last_row_data.get(table["table_name"], 0)
             )
             # Update last_row if rows were fetched
-            last_row_data[table["table_name"]] = table["last_row"] + rows_fetched
+            last_row_data[table["table_name"]] = last_row_data.get(table["table_name"], 0) + rows_fetched
 
         report = generate_report(contracts)
 
