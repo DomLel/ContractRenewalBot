@@ -165,41 +165,59 @@ def read_last_row(file_path):
 
 
 def write_last_row(file_path, last_row_data):
-    with open(file_path, "w") as file:
-        json.dump(last_row_data, file, indent=4)
+    try:
+        with open(file_path, "w") as file:
+            json.dump(last_row_data, file, indent=4)
+    except IOError as e:
+        log_error(f"Failed to write last_row data to file: {e}")
+
+
+def read_table_config(file_path):
+    if os.path.exists(file_path):
+        try:
+            with open(file_path, "r") as file:
+                table_config = json.load(file)
+
+                # Validate table config structure
+                if not isinstance(table_config, list):
+                    raise ValueError("The table configuration file must contain a list of table configurations.")
+
+                for table in table_config:
+                    required_keys = ["table_name", "name_column_name", "owner_column_name", "cost_column_name", "renewal_column_name", "last_row", "limit"]
+                    for key in required_keys:
+                        if key not in table:
+                            raise ValueError(f"Missing required key '{key}' in table configuration: {table}")
+
+                return table_config
+        except (json.JSONDecodeError, ValueError) as e:
+            log_error(f"Error reading or validating table config: {e}")
+            raise
+    else:
+        raise FileNotFoundError(f"Table configuration file '{file_path}' not found.")
+
+
+def write_table_config(file_path, table_config):
+    try:
+        with open(file_path, "w") as file:
+            json.dump(table_config, file, indent=4)
+    except IOError as e:
+        log_error(f"Failed to write table configuration to file: {e}")
 
 
 def main():
     contracts = []
     db_path = "contracts.sqlite"
     last_row_file = "last_row.json"
+    table_config_file = "tables_config.json"
 
     try:
         # Load last_row data
         last_row_data = read_last_row(last_row_file)
 
-        tables = [
-            {
-                "table_name": "vertex_systems",
-                "name_column_name": "name",
-                "owner_column_name": "evangelist",
-                "cost_column_name": "annual_cost",
-                "renewal_column_name": "contract_renewal",
-                "last_row": last_row_data.get("vertex_systems", 0),
-                "limit": 1
-            },
-            {
-                "table_name": "xtech_solutions",
-                "name_column_name": "name",
-                "owner_column_name": "owner",
-                "cost_column_name": "cost",
-                "renewal_column_name": "renewal_date",
-                "last_row": last_row_data.get("xtech_solutions", 0),
-                "limit": 1
-            }
-        ]
+        # Load table configuration
+        table_config = read_table_config(table_config_file)
 
-        for table in tables:
+        for table in table_config:
             rows_fetched = fetch_contracts(
                 contracts=contracts,
                 db_path=db_path,
@@ -229,6 +247,9 @@ def main():
 
         # Save updated last_row data
         write_last_row(last_row_file, last_row_data)
+
+        # Save updated table configuration
+        write_table_config(table_config_file, table_config)
 
     except Exception as e:
         log_error(str(e))
