@@ -49,7 +49,6 @@ def validate_table_and_columns(cursor, table_name, columns):
         if column not in existing_columns:
             raise ValueError(f"Column '{column}' does not exist in table '{table_name}'.")
 
-# todo
 def validate_row_data(row):
     if not isinstance(row[2], (int, float)) or row[2] < 0:
         raise ValueError(f"Invalid annual cost: {row[2]}")
@@ -70,8 +69,10 @@ def fetch_contracts(contracts, db_path, table_name, name_column_name, owner_colu
 
         validate_table_and_columns(cursor, table_name, [name_column_name, owner_column_name, cost_column_name, renewal_column_name])
 
+        today = datetime.now().strftime("%Y-%m-%d")
+
         query = f"""
-        WITH RankedContracts AS (
+        WITH UpcomingContracts AS (
             SELECT
                 {name_column_name},
                 {owner_column_name},
@@ -79,6 +80,8 @@ def fetch_contracts(contracts, db_path, table_name, name_column_name, owner_colu
                 {renewal_column_name}
             FROM
                 {table_name}
+            WHERE
+                {renewal_column_name} > ?
         )
         SELECT
             {name_column_name},
@@ -86,10 +89,10 @@ def fetch_contracts(contracts, db_path, table_name, name_column_name, owner_colu
             {cost_column_name},
             {renewal_column_name}
         FROM
-            RankedContracts
+            UpcomingContracts
         """
 
-        cursor.execute(query)
+        cursor.execute(query, (today,))
         rows = cursor.fetchall()
 
         for row in rows:
