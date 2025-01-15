@@ -152,7 +152,6 @@ def read_table_config(file_path):
             with open(file_path, "r") as file:
                 table_config = json.load(file)
 
-                # Validate table config structure
                 if not isinstance(table_config, list):
                     raise ValueError("The table configuration file must contain a list of table configurations.")
 
